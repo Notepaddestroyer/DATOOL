@@ -1104,7 +1104,7 @@ def main_menu():
 # ENTRY POINT
 # ═══════════════════════════════════════════════════════════
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     try:
         main_menu()
     except KeyboardInterrupt:
