@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+
+import socket
+import threading
+import random
+import sys
+import os
+import time
+import struct
+import subprocess
+import json
+import ssl
+import re
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# ═══════════════════════════════════════════════════════════
+# COLORS (Mobile-optimized)
+# ═══════════════════════════════════════════════════════════
+
+class C:
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RESET = "\033[0m"
+    ORANGE = "\033[38;5;208m"
+    PINK = "\033[38;5;198m"
+    GREY = "\033[38;5;240m"
+
+# ═══════════════════════════════════════════════════════════
+# BANNER (Mobile-optimized)
+# ═══════════════════════════════════════════════════════════
+
+def banner():
+    os.system("clear")
+    art = f"""
+{C.RED}{C.BOLD}
+  ██████╗  █████╗ ████████╗ ██████╗  ██████╗ ██╗     
+  ██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗██╔═══██╗██║     
+  ██║  ██║███████║   ██║   ██║   ██║██║   ██║██║     
+  ██║  ██║██╔══██║   ██║   ██║   ██║██║   ██║██║     
+  ██████╔╝██║  ██║   ██║   ╚██████╔╝╚██████╔╝███████╗
+  ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝
+{C.RESET}
+{C.GREY}  ───────────────────────────────────────{C.RESET}
+{C.CYAN}  ◈  Termux NetKit  ◈  v2.0  ◈  by DATOOL  ◈{C.RESET}
+{C.GREY}  ───────────────────────────────────────{C.RESET}
+"""
+    print(art)
+
+# ═══════════════════════════════════════════════════════════
+# UTILITIES (Mobile-optimized)
+# ═══════════════════════════════════════════════════════════
+
+def resolve_target(target):
+    try:
+        ip = socket.gethostbyname(target)
+        return ip
+    except socket.gaierror:
+        print(f"\n  {C.RED}[✗] Could not resolve hostname: {target}{C.RESET}")
+        return None
+
+def get_input(prompt, default=None, cast=str):
+    try:
+        suffix = f" [{C.YELLOW}{default}{C.RESET}]" if default is not None else ""
+        val = input(f"  {C.CYAN}◈ {prompt}{suffix}: {C.WHITE}").strip()
+        if val == "" and default is not None:
+            return cast(default)
+        return cast(val)
+    except (ValueError, KeyboardInterrupt):
+        if default is not None:
+            return cast(default)
+        return None
+
+def section(title):
+    print(f"\n  {C.GREY}{'─'*40}{C.RESET}")
+    print(f"  {C.BOLD}{C.MAGENTA}◈ {title}{C.RESET}")
+    print(f"  {C.GREY}{'─'*40}{C.RESET}")
+
+def success(msg):
+    print(f"  {C.GREEN}[✓]{C.RESET} {msg}")
+
+def info(msg):
+    print(f"  {C.BLUE}[i]{C.RESET} {msg}")
+
+def warn(msg):
+    print(f"  {C.YELLOW}[!]{C.RESET} {msg}")
+
+def error(msg):
+    print(f"  {C.RED}[✗]{C.RESET} {msg}")
+
+def progress(msg):
+    print(f"  {C.CYAN}[~]{C.RESET} {msg}")
+
+# ═══════════════════════════════════════════════════════════
+# MODULE 1: PORT SCANNER (Mobile-optimized)
+# ═══════════════════════════════════════════════════════════
+
+COMMON_PORTS = {
+    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
+    80: "HTTP", 110: "POP3", 111: "RPCbind", 135: "MSRPC",
+    139: "NetBIOS", 143: "IMAP", 443: "HTTPS", 445: "SMB",
+    993: "IMAPS", 995: "POP3S", 1433: "MSSQL", 1521: "Oracle",
+    1723: "PPTP", 3306: "MySQL", 3389: "RDP", 5432: "PostgreSQL",
+    5900: "VNC", 5985: "WinRM", 6379: "Redis", 8080: "HTTP-Alt",
+    8443: "HTTPS-Alt", 8888: "HTTP-Alt2", 27017: "MongoDB",
+    6667: "IRC", 9090: "WebSM", 9200: "Elasticsearch",
+    11211: "Memcached", 161: "SNMP", 162: "SNMP-Trap",
+}
+
+def grab_banner(ip, port, timeout=2):
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((ip, port))
+
+        if port in (443, 8443, 993, 995):
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            sock = ctx.wrap_socket(sock, server_hostname=ip)
+
+        if port in (80, 8080, 8443, 443, 8888):
+            sock.send(f"HEAD / HTTP/1.1\r\nHost: {ip}\r\n\r\n".encode())
+        elif port == 21:
+            pass
+        elif port == 22:
+            pass
+        elif port == 25:
+            pass
+        else:
+            sock.send(b"\r\n")
+
+        data = sock.recv(1024).decode(errors="ignore").strip()
+        sock.close()
+        return data[:120] if data else None
+    except Exception:
+        return None
+
+def scan_port(ip, port, timeout, grab_banners):
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((ip, port))
+        sock.close()
+        if result == 0:
+            bn = None
+            if grab_banners:
+                bn = grab_banner(ip, port)
+            service = COMMON_PORTS.get(port, "Unknown")
+            return (port, service, bn)
+    except Exception:
+        pass
+    return None
+
+def port_scanner():
+    section("PORT SCANNER")
+
+    target = get_input("Target (IP/hostname)")
+    ip = resolve_target(target)
+    if not ip:
+        return
+
+    info(f"Resolved: {target} → {ip}")
+    print()
+
+    print(f"  {C.WHITE}Scan Profiles:{C.RESET}")
+    print(f"    {C.YELLOW}1{C.RESET}) Quick   — Top 100 common ports")
+    print(f"    {C.YELLOW}2{C.RESET}) Full    — All 65535 ports")
+    print(f"    {C.YELLOW}3{C.RESET}) Custom  — Specify range or list")
+    print()
+
+    profile = get_input("Profile", "1", int)
+
+    if profile == 1:
+        ports = sorted(COMMON_PORTS.keys())
+    elif profile == 2:
+        ports = range(1, 65536)
+    elif profile == 3:
+        raw = get_input("Ports (e.g. 80,443 or 1-1024)")
+        ports = []
+        for part in raw.split(","):
+            part = part.strip()
+            if "-" in part:
+                a, b =
